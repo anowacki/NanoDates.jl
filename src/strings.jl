@@ -244,7 +244,45 @@ end
 Base.firstindex(::Nothing) = nothing
 Base.lastindex(::Nothing) = nothing
 
-function NanoDate(str::AbstractString, df::DateFormat=ISONanoDateFormat; localtime=false)
+"""
+    NanoDate(str::AbstractString, df::DateFormat=Dates.dateformat"$(ISONanoDateFormat)"; localtime=true)
+
+Construct a `NanoDate` by parsing `str` with the
+[`DateFormat`](@ref Dates.Dateformat) `df`, returning the local time if
+`localtime` is `true` (the default), and the UTC time determined by any offset
+otherwise.
+
+With only a single argument, the constructor `NanoDate(str)` assumes the
+string is in the ISO8061 format `yyyy-mm-ddTHH.MM.SS.s` with an optional
+additional time offset.  (See [`DateFormat`](@ref Dates.DateFormat) for
+details of Dates-style date formatting.)
+The time offset from UTC is specified in one of the following ways:
+
+1. The character `'Z'` at the end of a string, signifying a UTC time;
+2. `±HH:MM` at the end, giving an offset of the local time from UTC
+   as a negative (`-`) or positive (`+`) hour (`HH`) and minute (`MM`).
+
+If a `DateFormat` is supplied, then no time offsets are parsed.
+
+# Examples
+```
+julia> NanoDate("2000-01-02T01:02:03.123456789Z")
+2000-01-02T01:02:03.123456789
+
+julia> NanoDate("2000-01-02T01:02:03.123456789-01:00", localtime=false)
+2000-01-02T02:02:03.123456789
+
+julia> NanoDate("2000/01/02 01-02-03.123456789", dateformat"yyyy/mm/dd HH-MM-SS.sssssssss")
+2000-01-02T01:02:03.123456789
+
+julia> NanoDate("2000-01-02T01:02:03.123_456_789")
+2000-01-02T01:02:03.001234567
+```
+
+# References
+- https://en.wikipedia.org/wiki/ISO_8601
+"""
+function NanoDate(str::AbstractString, df::DateFormat=ISONanoDateFormat; localtime=true)
     isnothing(str) || isempty(str) && throw(ArgumentError("nanodate_string cannot be empty"))
     if '_' in str
         str = join(split(str, '_'))
@@ -255,10 +293,15 @@ function NanoDate(str::AbstractString, df::DateFormat=ISONanoDateFormat; localti
     offsets = isnothing(parts.offset) ? (0,0) : tooffset(parts.offset)
     periods = (ntuple(i -> isnothing(parts[i]) ? 0 : parse(Int, parts[i]), Val(6))..., subsecs...)
     result = NanoDate(periods...)
-    if localtime
-        result += (Hour(offsets[1]) + Minute(offsets[2]))
+    if !localtime
+        result -= (Hour(offsets[1]) + Minute(offsets[2]))
     end
     result
+end
+
+# Fast allocation-free parsing for the default format
+function NanoDate(str::AbstractString, ::typeof(ISONanoDateFormat); localtime=false)
+    parse(NanoDate, str, ISONanoDateFormat; localtime)
 end
 
 function simpleparse(indices, str::AbstractString)
